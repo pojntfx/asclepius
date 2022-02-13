@@ -2,9 +2,11 @@
   "name": "@pojntfx/asclepius",
   "version": "0.0.1",
   "description": "A medication reminder bot for Matrix.",
+  "type": "module",
   "main": "index.js",
   "bin": {
-    "asclepius": "main.js"
+    "asclepius": "cmd/asclepius.js",
+    "asclepius-token": "cmd/asclepius-token.js"
   },
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1"
