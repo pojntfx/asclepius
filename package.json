@@ -27,6 +27,6 @@
   },
   "homepage": "https://github.com/pojntfx/asclepius#readme",
   "dependencies": {
-    "matrix-bot-sdk": "^0.5.19"
+    "matrix-bot-sdk": "^0.6.0-beta.6"
   }
 }
