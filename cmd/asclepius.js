@@ -4,6 +4,7 @@ import {
   AutojoinRoomsMixin,
   MatrixClient,
   SimpleFsStorageProvider,
+  RustSdkCryptoStorageProvider,
 } from "matrix-bot-sdk";
 
 const homeserver = process.env.HOMESERVER;
@@ -16,7 +17,8 @@ if (!homeserver || !token) {
 }
 
 const storage = new SimpleFsStorageProvider("state.json");
-const client = new MatrixClient(homeserver, token, storage);
+const crypto = new RustSdkCryptoStorageProvider("crypto");
+const client = new MatrixClient(homeserver, token, storage, crypto);
 AutojoinRoomsMixin.setupOnClient(client);
 
 client.on("room.join", (roomId) => {
@@ -28,11 +30,31 @@ client.on("room.leave", (roomId) => {
 });
 
 client.on("room.message", async (roomId, event) => {
-  if (!event["content"]?.["msgtype"]) return;
+  if (event["content"]?.["msgtype"] !== "m.text") return;
+  if (event["sender"] === (await client.getUserId())) return;
 
-  console.log("Got message", roomId);
+  const suffix = `in room ${roomId} from user ${event["sender"]}`;
 
-  await client.replyNotice(roomId, event, "Hello world!");
+  const body = event["content"]["body"];
+  if (body?.startsWith("!hello")) {
+    console.log("Got hello message", suffix);
+
+    const sender = await client.getUserProfile(event["sender"]);
+
+    await client.replyNotice(roomId, event, `Hello, ${sender.displayname}!`);
+
+    return;
+  }
+
+  console.log("Got unknown message", suffix);
+
+  const sender = await client.getUserProfile(event["sender"]);
+
+  await client.replyNotice(
+    roomId,
+    event,
+    `Sorry ${sender.displayname}, I don't know how to respond to that request.`
+  );
 });
 
 client
