@@ -29,6 +29,7 @@
   "dependencies": {
     "lowdb": "^3.0.0",
     "matrix-bot-sdk": "^0.6.0-beta.6",
-    "short-uuid": "^4.2.0"
+    "short-uuid": "^4.2.0",
+    "tableify": "^1.1.1"
   }
 }

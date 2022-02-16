@@ -8,6 +8,7 @@ import {
 } from "matrix-bot-sdk";
 import { Low, JSONFile } from "lowdb";
 import short from "short-uuid";
+import tableify from "tableify";
 
 const idGenerator = short();
 
@@ -139,6 +140,29 @@ client.on("room.message", async (roomId, event) => {
       event,
       undefined,
       `Successfully set up a reminder for medication "${medication}" with schedule <code>${schedule}</code> and id <code>${id}</code>!`
+    );
+
+    return;
+  }
+
+  if (body?.startsWith("!list")) {
+    console.log("Got list message", suffix);
+
+    const output = tableify(
+      storage.data.reminders
+        .filter((r) => r.roomId == roomId && r.senderId == senderId)
+        .map((m) => ({
+          ID: m.id,
+          Medication: m.medication,
+          Schedule: m.schedule,
+        }))
+    );
+
+    await client.replyNotice(
+      roomId,
+      event,
+      undefined,
+      `<p>Here are your current medication reminders:</p>${output}`
     );
 
     return;
