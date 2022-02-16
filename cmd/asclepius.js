@@ -56,7 +56,7 @@ const welcomeMessage = `<p>Hey 👋! I'm <strong>Asclepius</strong>, your friend
 client.on("room.join", async (roomId, event) => {
   console.log("Joined room", roomId);
 
-  await client.replyNotice(roomId, event, undefined, welcomeMessage);
+  await client.replyText(roomId, event, undefined, welcomeMessage);
 });
 
 client.on("room.leave", async (roomId, event) => {
@@ -76,7 +76,7 @@ client.on("room.message", async (roomId, event) => {
   if (body?.startsWith("!help")) {
     console.log("Got help message", suffix);
 
-    await client.replyNotice(roomId, event, undefined, welcomeMessage);
+    await client.replyText(roomId, event, undefined, welcomeMessage);
 
     return;
   }
@@ -87,7 +87,7 @@ client.on("room.message", async (roomId, event) => {
     const abort = async () => {
       console.log("Got invalid schedule payload", suffix);
 
-      await client.replyNotice(
+      await client.replyText(
         roomId,
         event,
         undefined,
@@ -114,7 +114,7 @@ client.on("room.message", async (roomId, event) => {
           r.schedule == schedule
       )
     ) {
-      await client.replyNotice(
+      await client.replyText(
         roomId,
         event,
         `A reminder for this medication with the same schedule has already been set up!`
@@ -135,11 +135,11 @@ client.on("room.message", async (roomId, event) => {
 
     await storage.write();
 
-    await client.replyNotice(
+    await client.replyText(
       roomId,
       event,
       undefined,
-      `Successfully set up a reminder for medication "${medication}" with schedule <code>${schedule}</code> and id <code>${id}</code>!`
+      `Successfully set up a reminder for medication "${medication}" with schedule <code>${schedule}</code> and ID <code>${id}</code>!`
     );
 
     return;
@@ -158,7 +158,7 @@ client.on("room.message", async (roomId, event) => {
         }))
     );
 
-    await client.replyNotice(
+    await client.replyText(
       roomId,
       event,
       undefined,
@@ -168,11 +168,60 @@ client.on("room.message", async (roomId, event) => {
     return;
   }
 
+  if (body?.startsWith("!unschedule")) {
+    console.log("Got unschedule message", suffix);
+
+    const abort = async () => {
+      console.log("Got invalid unschedule payload", suffix);
+
+      await client.replyText(roomId, event, `Please specify a valid ID!`);
+    };
+
+    const matches = body.match(/^!unschedule (.*)/);
+    if (!matches) {
+      return await abort();
+    }
+
+    const [_, id] = matches;
+    if (!id) {
+      return await abort();
+    }
+
+    if (
+      !storage.data.reminders.find(
+        (r) => r.roomId == roomId && r.senderId == senderId && r.id == id
+      )
+    ) {
+      await client.replyText(
+        roomId,
+        event,
+        `No reminder with this ID could be found.`
+      );
+
+      return;
+    }
+
+    storage.data.reminders = storage.data.reminders.filter(
+      (r) => !(r.roomId == roomId && r.senderId == senderId && r.id == id)
+    );
+
+    await storage.write();
+
+    await client.replyText(
+      roomId,
+      event,
+      undefined,
+      `Successfully removed the reminder with ID <code>${id}</code>!`
+    );
+
+    return;
+  }
+
   console.log("Got unknown message", suffix);
 
   const sender = await client.getUserProfile(event["sender"]);
 
-  await client.replyNotice(
+  await client.replyText(
     roomId,
     event,
     undefined,
