@@ -1,15 +1,15 @@
 #!/usr/bin/env node
 
+import { JSONFile, Low } from "lowdb";
 import {
   AutojoinRoomsMixin,
   MatrixClient,
-  SimpleFsStorageProvider,
   RustSdkCryptoStorageProvider,
+  SimpleFsStorageProvider,
 } from "matrix-bot-sdk";
-import { Low, JSONFile } from "lowdb";
+import { scheduleJob } from "node-schedule";
 import short from "short-uuid";
 import tableify from "tableify";
-import { scheduleJob } from "node-schedule";
 
 const idGenerator = short();
 
@@ -17,7 +17,9 @@ const homeserver = process.env.HOMESERVER;
 const token = process.env.TOKEN;
 
 if (!homeserver || !token) {
-  console.log("Please set the HOMESERVER and TOKEN env variables to continue");
+  console.error(
+    "Please set the HOMESERVER and TOKEN env variables to continue"
+  );
 
   process.exit(1);
 }
@@ -32,11 +34,14 @@ const storage = new Low(adapter);
 
 let jobs = [];
 
+const getTraceableSuffix = (roomId, senderId) =>
+  `in ${roomId} for user ${senderId}`;
+
 const scheduleReminder = async (roomId, senderId, medication, schedule, id) => {
-  console.log("Scheduling reminder with ID", id);
+  console.log("Scheduling reminder", getTraceableSuffix(roomId, senderId));
 
   const job = scheduleJob(schedule, async () => {
-    console.log("Sending reminder with ID", id);
+    console.log("Sending reminder", getTraceableSuffix(roomId, senderId));
 
     const reminder = storage.data.reminders.find(
       (r) =>
@@ -47,7 +52,11 @@ const scheduleReminder = async (roomId, senderId, medication, schedule, id) => {
     );
 
     if (!reminder) {
-      console.log("Could not find reminder for ID", id);
+      console.error(
+        "Could not find reminder with ID",
+        id,
+        getTraceableSuffix(roomId, senderId)
+      );
 
       return;
     }
@@ -94,7 +103,7 @@ client.on("room.join", async (roomId, event) => {
   await client.replyText(roomId, event, undefined, welcomeMessage);
 });
 
-client.on("room.leave", async (roomId, event) => {
+client.on("room.leave", async (roomId) => {
   console.log("Left room", roomId);
 });
 
@@ -104,12 +113,10 @@ client.on("room.message", async (roomId, event) => {
   const senderId = event["sender"];
   if (senderId === (await client.getUserId())) return;
 
-  const suffix = `in room ${roomId} from user ${senderId}`;
-
   const body = event["content"]["body"];
 
   if (body?.startsWith("!help")) {
-    console.log("Got help message", suffix);
+    console.log("Got help message", getTraceableSuffix(roomId, senderId));
 
     await client.replyText(roomId, event, undefined, welcomeMessage);
 
@@ -117,16 +124,19 @@ client.on("room.message", async (roomId, event) => {
   }
 
   if (body?.startsWith("!schedule")) {
-    console.log("Got schedule message", suffix);
+    console.log("Got schedule message", getTraceableSuffix(roomId, senderId));
 
     const abort = async () => {
-      console.log("Got invalid schedule payload", suffix);
+      console.error(
+        "Got invalid schedule payload",
+        getTraceableSuffix(roomId, senderId)
+      );
 
       await client.replyText(
         roomId,
         event,
         undefined,
-        `Please specify a valid schedule, type <code>!help</code> to find out more.`
+        "❓ Sorry, I didn't get that 😔. Please specify a valid schedule, type <code>!help</code> to find out more."
       );
     };
 
@@ -152,7 +162,7 @@ client.on("room.message", async (roomId, event) => {
       await client.replyText(
         roomId,
         event,
-        `A reminder for this medication with the same schedule has already been set up!`
+        "❗ A reminder for this medication with the same schedule has already been set up 🖊️."
       );
 
       return;
@@ -176,14 +186,14 @@ client.on("room.message", async (roomId, event) => {
       roomId,
       event,
       undefined,
-      `Successfully set up a reminder for medication "${medication}" with schedule <code>${schedule}</code> and ID <code>${id}</code>!`
+      `✅ Successfully set up a reminder for medication "${medication}" with schedule <code>${schedule}</code> and ID <code>${id}</code> 😊!`
     );
 
     return;
   }
 
   if (body?.startsWith("!list")) {
-    console.log("Got list message", suffix);
+    console.log("Got list message", getTraceableSuffix(roomId, senderId));
 
     const output = tableify(
       storage.data.reminders
@@ -199,19 +209,26 @@ client.on("room.message", async (roomId, event) => {
       roomId,
       event,
       undefined,
-      `<p>Here are your current medication reminders:</p>${output}`
+      `<p>📜 Here are your current medication reminders:</p>${output}`
     );
 
     return;
   }
 
   if (body?.startsWith("!unschedule")) {
-    console.log("Got unschedule message", suffix);
+    console.log("Got unschedule message", getTraceableSuffix(roomId, senderId));
 
     const abort = async () => {
-      console.log("Got invalid unschedule payload", suffix);
+      console.error(
+        "Got invalid unschedule payload",
+        getTraceableSuffix(roomId, senderId)
+      );
 
-      await client.replyText(roomId, event, `Please specify a valid ID!`);
+      await client.replyText(
+        roomId,
+        event,
+        "❓ Sorry, I didn't get that 😔. Please specify a valid ID, type <code>!list</code> to see all scheduled reminders."
+      );
     };
 
     const matches = body.match(/^!unschedule (.*)/);
@@ -232,7 +249,7 @@ client.on("room.message", async (roomId, event) => {
       await client.replyText(
         roomId,
         event,
-        `No reminder with this ID could be found.`
+        "🔭 Sorry, I didn't find a reminder whith this ID 😔. Please specify a valid ID, type <code>!list</code> to see all scheduled reminders."
       );
 
       return;
@@ -251,9 +268,10 @@ client.on("room.message", async (roomId, event) => {
 
       jobs = jobs.filter((j) => j.id !== id);
     } else {
-      console.log(
-        "Could not find active job for ID",
-        id + ", assuming it has been cancelled before"
+      console.error(
+        "Could not find active job with ID",
+        id,
+        getTraceableSuffix(roomId, senderId)
       );
     }
 
@@ -261,21 +279,19 @@ client.on("room.message", async (roomId, event) => {
       roomId,
       event,
       undefined,
-      `Successfully removed the reminder with ID <code>${id}</code>!`
+      `✅ Successfully removed the reminder with ID <code>${id}</code>!`
     );
 
     return;
   }
 
-  console.log("Got unknown message", suffix);
-
-  const sender = await client.getUserProfile(event["sender"]);
+  console.error("Got unknown message", getTraceableSuffix(roomId, senderId));
 
   await client.replyText(
     roomId,
     event,
     undefined,
-    `Sorry ${sender.displayname}, I don't know how to respond to that request. Please type <code>!help</code> to list the available commands.`
+    "🔭 Sorry, I don't know how to respond to that request 😔. Please type <code>!help</code> to list the available commands."
   );
 });
 
