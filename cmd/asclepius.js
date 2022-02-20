@@ -11,8 +11,6 @@ import short from "short-uuid";
 import tableify from "tableify";
 import { scheduleJob } from "node-schedule";
 
-const jobs = [];
-
 const idGenerator = short();
 
 const homeserver = process.env.HOMESERVER;
@@ -31,6 +29,8 @@ AutojoinRoomsMixin.setupOnClient(client);
 
 const adapter = new JSONFile("storage.json");
 const storage = new Low(adapter);
+
+let jobs = [];
 
 const welcomeMessage = `<p>Hey 👋! I'm <strong>Asclepius</strong>, your friendly medication reminder bot 🤖!</p>
 <p>I can send you medication reminders based on <a href="https://crontab.guru/">CRON syntax</a>, which works like the following:</p>
@@ -237,6 +237,19 @@ client.on("room.message", async (roomId, event) => {
     );
 
     await storage.write();
+
+    const job = jobs.find((j) => j.id === id);
+
+    if (job) {
+      job.job.cancel();
+
+      jobs = jobs.filter((j) => j.id !== id);
+    } else {
+      console.log(
+        "Could not find active job for ID",
+        id + ", assuming it has been cancelled before"
+      );
+    }
 
     await client.replyText(
       roomId,
