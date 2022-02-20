@@ -2,6 +2,8 @@
 
 A medication reminder bot for Matrix.
 
+[![Docker CI](https://github.com/pojntfx/asclepius/actions/workflows/docker.yaml/badge.svg)](https://github.com/pojntfx/asclepius/actions/workflows/docker.yaml)
+
 ## Overview
 
 > Asclepius: The Greco-Roman god of medicine
