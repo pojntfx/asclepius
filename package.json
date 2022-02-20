@@ -6,7 +6,8 @@
   "main": "index.js",
   "bin": {
     "asclepius": "cmd/asclepius.js",
-    "asclepius-token": "cmd/asclepius-token.js"
+    "asclepius-token": "cmd/asclepius-token.js",
+    "asclepius-maintenance": "cmd/asclepius-maintenance.js"
   },
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1"
