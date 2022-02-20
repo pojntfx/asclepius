@@ -9,6 +9,9 @@ import {
 import { Low, JSONFile } from "lowdb";
 import short from "short-uuid";
 import tableify from "tableify";
+import { scheduleJob } from "node-schedule";
+
+const jobs = [];
 
 const idGenerator = short();
 
@@ -134,6 +137,34 @@ client.on("room.message", async (roomId, event) => {
     });
 
     await storage.write();
+
+    const job = scheduleJob(schedule, async () => {
+      console.log("Sending reminder with ID", id);
+
+      const reminder = storage.data.reminders.find(
+        (r) =>
+          r.roomId == roomId &&
+          r.senderId == senderId &&
+          r.medication == medication &&
+          r.schedule == schedule
+      );
+
+      if (!reminder) {
+        console.log("Could not find reminder for ID", id);
+
+        return;
+      }
+
+      await client.sendText(
+        roomId,
+        `${reminder.senderId} Your medication "${reminder.medication}" is due :)`
+      );
+    });
+
+    jobs.push({
+      id,
+      job,
+    });
 
     await client.replyText(
       roomId,
