@@ -7,7 +7,7 @@ const username = process.env.USERNAME;
 const password = process.env.PASSWORD;
 
 if (!homeserver || !username || !password) {
-  console.log(
+  console.error(
     "Please set the HOMESERVER, USERNAME and PASSWORD env variables to continue"
   );
 
