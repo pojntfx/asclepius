@@ -32,6 +32,38 @@ const storage = new Low(adapter);
 
 let jobs = [];
 
+const scheduleReminder = async (roomId, senderId, medication, schedule, id) => {
+  console.log("Scheduling reminder with ID", id);
+
+  const job = scheduleJob(schedule, async () => {
+    console.log("Sending reminder with ID", id);
+
+    const reminder = storage.data.reminders.find(
+      (r) =>
+        r.roomId == roomId &&
+        r.senderId == senderId &&
+        r.medication == medication &&
+        r.schedule == schedule
+    );
+
+    if (!reminder) {
+      console.log("Could not find reminder for ID", id);
+
+      return;
+    }
+
+    await client.sendText(
+      roomId,
+      `${reminder.senderId} ⌛ Your medication "${reminder.medication}" is due :)`
+    );
+  });
+
+  jobs.push({
+    id,
+    job,
+  });
+};
+
 const welcomeMessage = `<p>Hey 👋! I'm <strong>Asclepius</strong>, your friendly medication reminder bot 🤖!</p>
 <p>I can send you medication reminders based on <a href="https://crontab.guru/">CRON syntax</a>, which works like the following:</p>
 <pre>
@@ -138,33 +170,7 @@ client.on("room.message", async (roomId, event) => {
 
     await storage.write();
 
-    const job = scheduleJob(schedule, async () => {
-      console.log("Sending reminder with ID", id);
-
-      const reminder = storage.data.reminders.find(
-        (r) =>
-          r.roomId == roomId &&
-          r.senderId == senderId &&
-          r.medication == medication &&
-          r.schedule == schedule
-      );
-
-      if (!reminder) {
-        console.log("Could not find reminder for ID", id);
-
-        return;
-      }
-
-      await client.sendText(
-        roomId,
-        `${reminder.senderId} Your medication "${reminder.medication}" is due :)`
-      );
-    });
-
-    jobs.push({
-      id,
-      job,
-    });
+    await scheduleReminder(roomId, senderId, medication, schedule, id);
 
     await client.replyText(
       roomId,
@@ -281,4 +287,8 @@ client.on("room.message", async (roomId, event) => {
   await client.start();
 
   console.log("Asclepius is running and connected to", homeserver);
+
+  storage.data.reminders.forEach((r) =>
+    scheduleReminder(r.roomId, r.senderId, r.medication, r.schedule, r.id)
+  );
 })();
