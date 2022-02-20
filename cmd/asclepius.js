@@ -12,11 +12,9 @@ import short from "short-uuid";
 import tableify from "tableify";
 import cronstrue from "cronstrue";
 
-const idGenerator = short();
-
+// Get configuration from environment
 const homeserver = process.env.HOMESERVER;
 const token = process.env.TOKEN;
-
 if (!homeserver || !token) {
   console.error(
     "Please set the HOMESERVER and TOKEN env variables to continue"
@@ -25,31 +23,53 @@ if (!homeserver || !token) {
   process.exit(1);
 }
 
+// Connect to Matrix
+const idGenerator = short();
 const state = new SimpleFsStorageProvider("state.json");
 const crypto = new RustSdkCryptoStorageProvider("crypto");
 const client = new MatrixClient(homeserver, token, state, crypto);
 AutojoinRoomsMixin.setupOnClient(client);
-
 const adapter = new JSONFile("storage.json");
 const storage = new Low(adapter);
 
+// Global in-memory state
 let jobs = [];
 
+/**
+ * Get a traceable suffix for room and sender ID
+ * @param {string} roomId Matrix room ID
+ * @param {string} senderId Matrix sender ID
+ * @returns Traceable suffix
+ */
 const getTraceableSuffix = (roomId, senderId) =>
   `in ${roomId} for user ${senderId}`;
 
+/**
+ * Get a human description of a CRON expression
+ * @param {string} cron CRON expression
+ * @returns Human description of the CRON expression
+ */
 const getHumanCron = (cron) =>
   cronstrue.toString(cron + " *", {
     use24HourTimeFormat: true,
     verbose: true,
   });
 
+/**
+ *
+ * @param {string} roomId Matrix room ID
+ * @param {string} senderId Matrix sender ID
+ * @param {string} medication Name of the medication
+ * @param {string} schedule CRON expression for the reminder
+ * @param {string} id ID of the reminder
+ */
 const scheduleReminder = async (roomId, senderId, medication, schedule, id) => {
   console.log("Scheduling reminder", getTraceableSuffix(roomId, senderId));
 
   const job = scheduleJob(schedule, async () => {
     console.log("Sending reminder", getTraceableSuffix(roomId, senderId));
 
+    // Check if the reminder exists
     const reminder = storage.data.reminders.find(
       (r) =>
         r.roomId == roomId &&
@@ -68,19 +88,22 @@ const scheduleReminder = async (roomId, senderId, medication, schedule, id) => {
       return;
     }
 
+    // Send the reminder message
     await client.sendText(
       roomId,
       `${reminder.senderId} ⌛ Your medication "${reminder.medication}" is due :)`
     );
   });
 
+  // Add the reminder job to the in-memory database
   jobs.push({
     id,
     job,
   });
 };
 
-const welcomeMessage = `<p>Hey 👋! I'm <strong>Asclepius</strong>, your friendly medication reminder bot 🤖!</p>
+// Message to send to clients upon first contact with Asclepius
+const helpMessage = `<p>Hey 👋! I'm <strong>Asclepius</strong>, your friendly medication reminder bot 🤖!</p>
 <p>I can send you medication reminders based on <a href="https://crontab.guru/">CRON syntax</a>, which works like the following:</p>
 <pre>
 <code>*    *    *    *    *
@@ -104,32 +127,40 @@ const welcomeMessage = `<p>Hey 👋! I'm <strong>Asclepius</strong>, your friend
 <p>Asclepius is ✨ Free/Libre and Open Source Software ✨ licensed under the AGPL-3.0 license. For more information, check out the project on GitHub: <a href="https://github.com/pojntfx/asclepius">github.com/pojntfx/asclepius</a></p>
 `;
 
+// Send help message to clients upon first contact with Asclepius
 client.on("room.join", async (roomId, event) => {
   console.log("Joined room", roomId);
 
-  await client.replyText(roomId, event, undefined, welcomeMessage);
+  await client.replyText(roomId, event, undefined, helpMessage);
 });
 
+// Log when leaving a room
 client.on("room.leave", async (roomId) => {
   console.log("Left room", roomId);
 });
 
+// Respond to incoming messages
 client.on("room.message", async (roomId, event) => {
+  // Ignore non-text messages
   if (event["content"]?.["msgtype"] !== "m.text") return;
 
+  // Ignore messages not directed at Asclepius
   const senderId = event["sender"];
   if (senderId === (await client.getUserId())) return;
 
+  // Get the text body
   const body = event["content"]["body"];
 
+  // Handle help command
   if (body?.startsWith("!help")) {
     console.log("Got help message", getTraceableSuffix(roomId, senderId));
 
-    await client.replyText(roomId, event, undefined, welcomeMessage);
+    await client.replyText(roomId, event, undefined, helpMessage);
 
     return;
   }
 
+  // Handle schedule command
   if (body?.startsWith("!schedule")) {
     console.log("Got schedule message", getTraceableSuffix(roomId, senderId));
 
@@ -147,24 +178,21 @@ client.on("room.message", async (roomId, event) => {
       );
     };
 
-    const matches = body.match(/^(?:!schedule )(.+?)(?= ([0-9|\*|\ ]{7}))/);
-    if (!matches) {
-      return await abort();
-    }
-
+    // Parse medication and schedule
     const medication = body.split("\n")[0]?.split(" ").slice(1, -4).join(" ");
     const schedule = body.split("\n")[0]?.split(" ").slice(-4).join(" ");
-
     if (!medication || !schedule) {
       return await abort();
     }
 
+    // Validate the schedule
     try {
       getHumanCron(schedule); // This also validates it
     } catch (e) {
       return await abort();
     }
 
+    // Abort if the reminder already exists
     if (
       storage.data.reminders.find(
         (r) =>
@@ -183,6 +211,7 @@ client.on("room.message", async (roomId, event) => {
       return;
     }
 
+    // Save the reminder to the DB
     const id = idGenerator.new();
 
     storage.data.reminders.push({
@@ -195,6 +224,7 @@ client.on("room.message", async (roomId, event) => {
 
     await storage.write();
 
+    // Schedule the reminder
     await scheduleReminder(roomId, senderId, medication, schedule, id);
 
     await client.replyText(
@@ -209,9 +239,11 @@ client.on("room.message", async (roomId, event) => {
     return;
   }
 
+  // Handle list command
   if (body?.startsWith("!list")) {
     console.log("Got list message", getTraceableSuffix(roomId, senderId));
 
+    // Create HTML table of the reminders in the DB
     const output = tableify(
       storage.data.reminders
         .filter((r) => r.roomId == roomId && r.senderId == senderId)
@@ -232,6 +264,7 @@ client.on("room.message", async (roomId, event) => {
     return;
   }
 
+  // Handle unschedule command
   if (body?.startsWith("!unschedule")) {
     console.log("Got unschedule message", getTraceableSuffix(roomId, senderId));
 
@@ -248,6 +281,7 @@ client.on("room.message", async (roomId, event) => {
       );
     };
 
+    // Parse the ID
     const matches = body.match(/^!unschedule (.*)/);
     if (!matches) {
       return await abort();
@@ -258,6 +292,7 @@ client.on("room.message", async (roomId, event) => {
       return await abort();
     }
 
+    // Abort if the reminder does not exist
     if (
       !storage.data.reminders.find(
         (r) => r.roomId == roomId && r.senderId == senderId && r.id == id
@@ -272,14 +307,15 @@ client.on("room.message", async (roomId, event) => {
       return;
     }
 
+    // Remove the reminder from the DB
     storage.data.reminders = storage.data.reminders.filter(
       (r) => !(r.roomId == roomId && r.senderId == senderId && r.id == id)
     );
 
     await storage.write();
 
+    // Cancel the reminder's job
     const job = jobs.find((j) => j.id === id);
-
     if (job) {
       job.job.cancel();
 
@@ -302,6 +338,7 @@ client.on("room.message", async (roomId, event) => {
     return;
   }
 
+  // Handle unknown commands
   console.error("Got unknown message", getTraceableSuffix(roomId, senderId));
 
   await client.replyText(
@@ -313,14 +350,18 @@ client.on("room.message", async (roomId, event) => {
 });
 
 (async () => {
+  // Read the existing state
   await storage.read();
 
+  // Initialize the existing state
   storage.data ||= { reminders: [] };
 
+  // Connect to Matrix
   await client.start();
 
   console.log("Asclepius is running and connected to", homeserver);
 
+  // Add reminders from existing state
   storage.data.reminders.forEach((r) =>
     scheduleReminder(r.roomId, r.senderId, r.medication, r.schedule, r.id)
   );
