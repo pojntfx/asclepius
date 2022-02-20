@@ -27,6 +27,7 @@
   },
   "homepage": "https://github.com/pojntfx/asclepius#readme",
   "dependencies": {
+    "cronstrue": "^1.125.0",
     "lowdb": "^3.0.0",
     "matrix-bot-sdk": "^0.6.0-beta.6",
     "node-schedule": "^2.1.0",

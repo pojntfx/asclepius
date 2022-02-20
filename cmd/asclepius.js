@@ -10,6 +10,7 @@ import {
 import { scheduleJob } from "node-schedule";
 import short from "short-uuid";
 import tableify from "tableify";
+import cronstrue from "cronstrue";
 
 const idGenerator = short();
 
@@ -36,6 +37,12 @@ let jobs = [];
 
 const getTraceableSuffix = (roomId, senderId) =>
   `in ${roomId} for user ${senderId}`;
+
+const getHumanCron = (cron) =>
+  cronstrue.toString(cron + " *", {
+    use24HourTimeFormat: true,
+    verbose: true,
+  });
 
 const scheduleReminder = async (roomId, senderId, medication, schedule, id) => {
   console.log("Scheduling reminder", getTraceableSuffix(roomId, senderId));
@@ -145,8 +152,16 @@ client.on("room.message", async (roomId, event) => {
       return await abort();
     }
 
-    const [_, medication, schedule] = matches;
+    const medication = body.split("\n")[0]?.split(" ").slice(1, -4).join(" ");
+    const schedule = body.split("\n")[0]?.split(" ").slice(-4).join(" ");
+
     if (!medication || !schedule) {
+      return await abort();
+    }
+
+    try {
+      getHumanCron(schedule); // This also validates it
+    } catch (e) {
       return await abort();
     }
 
@@ -186,7 +201,9 @@ client.on("room.message", async (roomId, event) => {
       roomId,
       event,
       undefined,
-      `✅ Successfully set up a reminder for medication "${medication}" with schedule <code>${schedule}</code> and ID <code>${id}</code> 😊!`
+      `✅ Successfully set up a reminder for medication "${medication}" with schedule <code>${schedule} (${getHumanCron(
+        schedule
+      )})</code> and ID <code>${id}</code>!`
     );
 
     return;
@@ -201,7 +218,7 @@ client.on("room.message", async (roomId, event) => {
         .map((m) => ({
           ID: m.id,
           Medication: m.medication,
-          Schedule: m.schedule,
+          Schedule: `${m.schedule} (${getHumanCron(m.schedule)})`,
         }))
     );
 
