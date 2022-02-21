@@ -12,4 +12,7 @@ COPY package.json package-lock.json /app/
 
 RUN npm ci
 
-CMD node cmd/asclepius.js
+RUN mkdir -p /data
+WORKDIR /data
+
+CMD node /app/cmd/asclepius.js
